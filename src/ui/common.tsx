@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from 'react'
+import { memo, useState, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { Check, Info, WarningCircle } from '@phosphor-icons/react'
 import { cx, spring } from '../lib/util'
@@ -16,18 +16,20 @@ export const Avatar = memo(function Avatar({
 }: { name: string; hue: number; url?: string; size?: number; className?: string }) {
   const g = AVATAR_GRADIENTS[Math.abs(Math.floor(hue / 40)) % AVATAR_GRADIENTS.length]
   const initials = name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+  const [badUrl, setBadUrl] = useState<string | null>(null)
+  const showImg = url && badUrl !== url
   return (
     <div
       className={cx('relative shrink-0 overflow-hidden rounded-full select-none', className)}
       style={{
         width: size, height: size,
-        background: url ? undefined : `linear-gradient(160deg, ${g[0]}, ${g[1]})`,
+        background: showImg ? undefined : `linear-gradient(160deg, ${g[0]}, ${g[1]})`,
         fontSize: size * 0.4,
       }}
       aria-hidden
     >
-      {url ? (
-        <img src={url} alt="" className="size-full object-cover" loading="lazy" decoding="async" />
+      {showImg ? (
+        <img src={url} alt="" className="size-full object-cover" loading="lazy" decoding="async" onError={() => setBadUrl(url)} />
       ) : (
         <span className="grid size-full place-items-center font-semibold text-white/95" style={{ letterSpacing: '0.02em' }}>
           {initials || '?'}

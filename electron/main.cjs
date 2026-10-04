@@ -6,6 +6,9 @@ const path = require('node:path')
 const isDev = process.argv.includes('--dev') || !app.isPackaged
 const DEV_URL = process.env.QUAPP_DEV_URL || 'http://localhost:5199'
 
+// GPU drivers on VMs/Remote Desktop crash the renderer — software GL is fine for a chat app
+if (process.env.QUAPP_GPU !== '1') app.disableHardwareAcceleration()
+
 // single instance — a second launch focuses the open window
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
@@ -55,7 +58,7 @@ function startDaemon() {
   daemon.on('exit', (code, sig) => {
     dlog(`daemon exited code=${code} sig=${sig}`)
     daemon = null
-    if (!quitting) setTimeout(startDaemon, 2500) // auto-restart on crash
+    if (!quitting && code !== 0) setTimeout(startDaemon, 2500) // auto-restart on crash
   })
 }
 

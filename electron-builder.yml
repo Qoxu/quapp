@@ -20,6 +20,7 @@ files:
   - dist/**
   - electron/**
   - bridge/dist/**
+  - build/icon.png
   - package.json
   - "!**/*.map"
 

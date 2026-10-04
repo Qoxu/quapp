@@ -65,6 +65,8 @@ const S = {
   avatarQueued: new Set(),
   metaQueued: new Set(),
   connecting: false,
+  lastQr: null,
+  backoff: 2000,
 }
 
 const FLAGS_FILE = path.join(DATA, 'flags.json')
@@ -367,10 +369,11 @@ async function ensureSocket() {
 }
 
 function onConn({ connection, lastDisconnect, qr }) {
-  if (qr) emit({ type: 'qr', qr })
+  if (qr) { S.lastQr = qr; emit({ type: 'qr', qr }) }
   if (connection === 'open') {
     S.open = true
     S.backoff = 2000
+    S.lastQr = null
     const u = S.sock.user
     S.me = { id: norm(u.id), name: u.name ?? 'Me', phone: '+' + norm(u.id).split('@')[0] }
     emit({ type: 'linked', account: snapshot().account })
@@ -470,8 +473,8 @@ function onMessages({ messages, type }) {
       if (chat) { chat.unread = model.from === 'me' ? chat.unread : chat.unread + 1; chat.lastActivity = model.ts }
       emit({ type: 'message', msg: model })
       if (chat) emit({ type: 'chat_update', chat })
-    } else if (type === 'append') {
-      // backfill while online — only surface genuinely-new tail messages
+    } else if (type === 'append' && S.historyDone) {
+      // backfill while online — only surface after the initial sync
       emit({ type: 'message', msg: model })
     }
   }
@@ -904,7 +907,7 @@ async function mediaBuffer(chatId, messageId) {
     if (fs.existsSync(cache)) return fs.readFileSync(cache)
   } catch { /* fall through */ }
   try {
-    const buf = await downloadMediaMessage(entry.proto, 'buffer', {}, { logger, reuploadRequest: S.sock.updateMediaMessage })
+    const buf = await downloadMediaMessage(entry.proto, 'buffer', {}, { logger, reuploadRequest: (m) => S.sock.updateMediaMessage(m) })
     fs.writeFileSync(cache, buf)
     return buf
   } catch (e) {
@@ -932,8 +935,15 @@ const mediaServer = http.createServer(async (req, res) => {
 
 // ---------- websocket ----------
 const wss = new WebSocketServer({ host: HOST, port: WS_PORT })
+wss.on('error', (e) => {
+  // another daemon already owns the ports — leave quietly, don't fight it
+  log(`ws server error: ${e.message ?? e}`)
+  process.exit(0)
+})
 wss.on('connection', (ws) => {
   S.clients.add(ws)
+  // a UI that connects after pairing started still needs the current QR
+  if (S.lastQr && !S.open) ws.send(JSON.stringify({ ev: { type: 'qr', qr: S.lastQr } }))
   ws.on('close', () => S.clients.delete(ws))
   ws.on('message', async (data) => {
     let f
@@ -950,6 +960,7 @@ wss.on('connection', (ws) => {
   })
 })
 
+mediaServer.on('error', () => { /* another daemon owns it — ws error handler exits */ })
 mediaServer.listen(MEDIA_PORT, HOST, () => {
   log(`ws://${HOST}:${WS_PORT}  media http://${HOST}:${MEDIA_PORT}  data=${DATA}`)
 })
